@@ -1,0 +1,12 @@
+version: '3.8'
+services:
+  activemq:
+    image: rmohr/activemq:latest
+    container_name: broker-ecommerce
+    ports:
+      - "61616:61616" # Trafego JMS (Nativo Java)
+      - "61613:61613" # Trafego STOMP (Python, Node.js, Ruby)
+      - "8161:8161"   # Painel Administrativo Web
+    environment:
+      - ACTIVEMQ_ADMIN_LOGIN=admin
+      - ACTIVEMQ_ADMIN_PASSWORD=admin

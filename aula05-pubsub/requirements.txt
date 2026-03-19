@@ -1,0 +1,4 @@
+flask==3.0.2
+stomp.py==8.1.2
+flask-cors==4.0.0
+pytest==8.0.0
