@@ -1,3 +1,4 @@
+package pdf.exercícios;
 public class Pedido {
 private final int id;
 private final String cliente;

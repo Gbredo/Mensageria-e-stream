@@ -1,3 +1,4 @@
+package pdf.exercícios;
 import java.util.concurrent.BlockingQueue;
 public class ModuloVendas implements Runnable {
 private final BlockingQueue<Pedido> fila;

@@ -1,3 +1,4 @@
+package pdf.exercícios;
 import java.util.concurrent.BlockingQueue;
 public class EmissorNotaFiscal implements Runnable {
 private final BlockingQueue<Pedido> fila;
