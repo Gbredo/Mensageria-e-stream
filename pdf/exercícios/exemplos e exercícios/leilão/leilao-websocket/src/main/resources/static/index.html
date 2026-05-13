@@ -1,0 +1,609 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <title>Leilão ao Vivo — WebSocket</title>
+
+    <!-- SockJS: fallback para WebSocket em redes restritivas -->
+    <script src="https://cdn.jsdelivr.net/npm/sockjs-client@1/dist/sockjs.min.js"></script>
+    <!-- STOMP.js: protocolo de mensagens sobre WebSocket -->
+    <script src="https://cdn.jsdelivr.net/npm/stompjs@2.3.3/lib/stomp.min.js"></script>
+
+    <style>
+        :root {
+            --bg: #0f0f1a;
+            --card: #1a1a2e;
+            --card2: #16213e;
+            --accent: #00d4aa;
+            --warn: #f5a623;
+            --green: #27ae60;
+            --red: #e94560;
+            --border: #2a2a4a;
+            --text: #e0e0f0;
+            --muted: #888aaa;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            background: var(--bg);
+            color: var(--text);
+            font-family: 'Segoe UI', system-ui, sans-serif;
+            min-height: 100vh;
+        }
+
+        /* ── BANNER ── */
+        .tech-banner {
+            background: var(--accent);
+            color: #001a14;
+            text-align: center;
+            padding: 10px 20px;
+            font-weight: 700;
+            font-size: 0.95rem;
+            letter-spacing: 0.5px;
+        }
+        .tech-banner span { opacity: 0.7; font-weight: 400; }
+
+        header {
+            background: var(--card);
+            border-bottom: 2px solid var(--border);
+            padding: 18px 32px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 16px;
+        }
+        .logo { font-size: 1.4rem; font-weight: 800; color: var(--accent); }
+        .logo span { color: var(--text); font-weight: 300; }
+
+        /* ── STATS WEBSOCKET ── */
+        .ws-stats {
+            background: #001a14;
+            border: 2px solid var(--accent);
+            border-radius: 10px;
+            padding: 12px 20px;
+            display: flex;
+            gap: 28px;
+            align-items: center;
+        }
+        .stat-item { text-align: center; }
+        .stat-value {
+            font-size: 1.8rem;
+            font-weight: 900;
+            color: var(--accent);
+            line-height: 1;
+        }
+        .stat-label { font-size: 0.68rem; color: var(--muted); text-transform: uppercase; letter-spacing: 1px; margin-top: 2px; }
+
+        /* ── CONEXÃO STATUS ── */
+        .conn-badge {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            background: var(--card2);
+            border-radius: 20px;
+            padding: 6px 14px;
+            font-size: 0.82rem;
+        }
+        .conn-dot {
+            width: 10px; height: 10px;
+            border-radius: 50%;
+            background: #555;
+            transition: background 0.3s;
+        }
+        .conn-dot.conectado { background: var(--accent); box-shadow: 0 0 8px var(--accent); animation: glow 2s infinite; }
+        .conn-dot.erro { background: var(--red); }
+        @keyframes glow {
+            0%, 100% { box-shadow: 0 0 4px var(--accent); }
+            50% { box-shadow: 0 0 14px var(--accent); }
+        }
+
+        main {
+            max-width: 1100px;
+            margin: 28px auto;
+            padding: 0 20px;
+            display: grid;
+            grid-template-columns: 1fr 340px;
+            gap: 22px;
+        }
+
+        .card {
+            background: var(--card);
+            border: 1px solid var(--border);
+            border-radius: 14px;
+            padding: 24px;
+        }
+
+        .item-img {
+            width: 100%;
+            height: 280px;
+            object-fit: cover;
+            border-radius: 10px;
+            border: 2px solid var(--border);
+        }
+        .item-title {
+            font-size: 1.35rem;
+            font-weight: 700;
+            margin: 16px 0 6px;
+            color: var(--warn);
+        }
+        .item-desc { color: var(--muted); font-size: 0.9rem; line-height: 1.6; }
+
+        .timer-block {
+            background: var(--card2);
+            border-radius: 10px;
+            padding: 14px 20px;
+            margin: 18px 0;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        .timer-val {
+            font-size: 2.2rem;
+            font-weight: 900;
+            color: var(--warn);
+            font-variant-numeric: tabular-nums;
+        }
+        .timer-val.urgente { color: var(--red); animation: blink 1s step-end infinite; }
+        @keyframes blink { 50% { opacity: 0.4; } }
+        .timer-label { color: var(--muted); font-size: 0.8rem; }
+
+        .lance-atual-block { text-align: center; margin: 18px 0; }
+        .lance-atual-val {
+            font-size: 3rem;
+            font-weight: 900;
+            color: var(--green);
+            transition: transform 0.3s, color 0.3s;
+        }
+        .lance-atual-val.bump {
+            transform: scale(1.12);
+            color: var(--accent);
+        }
+        .lance-atual-label { color: var(--muted); font-size: 0.85rem; margin-top: 4px; }
+        .lance-lider {
+            display: inline-block;
+            background: #0d2b1a;
+            border: 1px solid var(--green);
+            color: var(--green);
+            border-radius: 20px;
+            padding: 4px 14px;
+            font-size: 0.85rem;
+            margin-top: 8px;
+        }
+
+        .form-group { margin-bottom: 14px; }
+        label { display: block; font-size: 0.82rem; color: var(--muted); margin-bottom: 6px; }
+        input[type="text"], input[type="number"] {
+            width: 100%;
+            background: var(--card2);
+            border: 1px solid var(--border);
+            color: var(--text);
+            padding: 10px 14px;
+            border-radius: 8px;
+            font-size: 1rem;
+        }
+        input:focus { outline: none; border-color: var(--accent); }
+
+        .btn {
+            width: 100%;
+            padding: 12px;
+            border: none;
+            border-radius: 8px;
+            font-size: 1rem;
+            font-weight: 700;
+            cursor: pointer;
+            transition: opacity 0.2s, transform 0.1s;
+        }
+        .btn:active { transform: scale(0.97); }
+        .btn-lance { background: var(--accent); color: #001a14; }
+        .btn-lance:hover { opacity: 0.9; }
+        .btn-lance:disabled { background: #444; color: #888; cursor: not-allowed; }
+        .btn-reiniciar {
+            background: transparent;
+            border: 1px solid var(--border);
+            color: var(--muted);
+            margin-top: 10px;
+            font-size: 0.85rem;
+            padding: 8px;
+        }
+        .btn-reiniciar:hover { border-color: var(--red); color: var(--red); }
+
+        .feedback {
+            text-align: center;
+            padding: 10px;
+            border-radius: 8px;
+            font-size: 0.9rem;
+            font-weight: 600;
+            margin-top: 10px;
+            display: none;
+        }
+        .feedback.ok { background: #0d2b1a; color: var(--green); border: 1px solid var(--green); display: block; }
+        .feedback.erro { background: #2b0d0d; color: var(--red); border: 1px solid var(--red); display: block; }
+
+        .historico-title {
+            font-size: 0.8rem;
+            text-transform: uppercase;
+            letter-spacing: 1.5px;
+            color: var(--muted);
+            margin-bottom: 12px;
+        }
+        .historico-lista { list-style: none; display: flex; flex-direction: column; gap: 8px; }
+        .historico-item {
+            background: var(--card2);
+            border-radius: 8px;
+            padding: 10px 14px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-left: 3px solid var(--warn);
+            animation: slidein 0.4s ease;
+        }
+        @keyframes slidein { from { opacity: 0; transform: translateX(-12px); } to { opacity: 1; transform: none; } }
+        .historico-item:first-child { border-left-color: var(--accent); }
+        .hist-user { font-weight: 700; font-size: 0.9rem; }
+        .hist-valor { font-size: 1rem; font-weight: 800; color: var(--warn); }
+        .hist-hora { font-size: 0.75rem; color: var(--muted); }
+        .sem-lances { color: var(--muted); font-size: 0.9rem; text-align: center; padding: 20px; }
+
+        /* ── LOG DE EVENTOS WS ── */
+        .ws-log {
+            grid-column: 1 / -1;
+            background: #001a14;
+            border: 1px solid var(--accent);
+            border-radius: 14px;
+            padding: 16px 20px;
+        }
+        .ws-log-title {
+            font-size: 0.8rem;
+            text-transform: uppercase;
+            letter-spacing: 1.5px;
+            color: var(--accent);
+            margin-bottom: 10px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .ws-log-body {
+            font-family: 'Courier New', monospace;
+            font-size: 0.78rem;
+            max-height: 120px;
+            overflow-y: auto;
+            line-height: 1.7;
+        }
+        .ws-log-body .log-connect { color: var(--accent); }
+        .ws-log-body .log-lance { color: #f5a623; font-weight: bold; }
+        .ws-log-body .log-timer { color: #4a5568; }
+        .ws-log-body .log-erro { color: var(--red); }
+
+        /* ── OVERLAY ENCERRADO ── */
+        .overlay-encerrado {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,0.85);
+            z-index: 100;
+            align-items: center;
+            justify-content: center;
+        }
+        .overlay-encerrado.show { display: flex; }
+        .modal-encerrado {
+            background: var(--card);
+            border: 2px solid var(--accent);
+            border-radius: 18px;
+            padding: 40px;
+            text-align: center;
+            max-width: 440px;
+        }
+        .modal-encerrado h2 { font-size: 2rem; color: var(--accent); margin-bottom: 16px; }
+        .modal-vencedor { font-size: 1.1rem; color: var(--green); margin-bottom: 8px; }
+        .modal-valor { font-size: 2.5rem; font-weight: 900; color: var(--green); }
+        .modal-stats { color: var(--muted); font-size: 0.85rem; margin-top: 16px; line-height: 2; }
+        .modal-stats strong { color: var(--accent); }
+
+        @media (max-width: 768px) {
+            main { grid-template-columns: 1fr; }
+        }
+    </style>
+</head>
+<body>
+
+<div class="tech-banner">
+    ✅ ABORDAGEM: WEBSOCKET (STOMP) — <span>conexão persistente; servidor notifica clientes apenas quando há novidade</span>
+</div>
+
+<header>
+    <div class="logo">⚡ Leilão<span> ao Vivo</span></div>
+    <div class="ws-stats">
+        <div class="stat-item">
+            <div class="stat-value" id="clientesConectados">0</div>
+            <div class="stat-label">Clientes Conectados</div>
+        </div>
+        <div style="width:1px; height:40px; background:var(--border);"></div>
+        <div class="stat-item">
+            <div class="stat-value" id="totalMsgs">0</div>
+            <div class="stat-label">Msgs Recebidas (WS)</div>
+        </div>
+        <div style="width:1px; height:40px; background:var(--border);"></div>
+        <div class="stat-item">
+            <div class="stat-value" id="totalLancesWs">0</div>
+            <div class="stat-label">Lances</div>
+        </div>
+        <div class="conn-badge">
+            <div class="conn-dot" id="connDot"></div>
+            <span id="connLabel">Conectando...</span>
+        </div>
+    </div>
+</header>
+
+<main>
+    <!-- COLUNA ESQUERDA: item + histórico -->
+    <div>
+        <div class="card" style="margin-bottom:22px;">
+            <img id="imgItem" class="item-img" src="https://picsum.photos/seed/arte42/600/400" alt="Item do leilão"/>
+            <div class="item-title" id="nomeItem">Aguardando conexão WebSocket...</div>
+            <div class="item-desc" id="descItem"></div>
+
+            <div class="timer-block">
+                <div>
+                    <div class="timer-val" id="timer">--:--</div>
+                    <div class="timer-label">Tempo restante</div>
+                </div>
+            </div>
+
+            <div class="lance-atual-block">
+                <div class="lance-atual-label">Lance atual</div>
+                <div class="lance-atual-val" id="lanceAtual">R$ 0,00</div>
+                <div class="lance-lider" id="maiorLancador">Aguardando...</div>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="historico-title">📋 Histórico de Lances</div>
+            <ul class="historico-lista" id="historicoLista">
+                <li class="sem-lances">Nenhum lance registrado ainda.</li>
+            </ul>
+        </div>
+    </div>
+
+    <!-- COLUNA DIREITA: formulário + info -->
+    <div>
+        <div class="card">
+            <div class="historico-title" style="margin-bottom:20px;">🏷️ Fazer Lance</div>
+
+            <div class="form-group">
+                <label>Seu nome / apelido</label>
+                <input type="text" id="inputUsuario" placeholder="Ex: João Silva" maxlength="30"/>
+            </div>
+            <div class="form-group">
+                <label>Valor do lance (R$)</label>
+                <input type="number" id="inputValor" placeholder="Ex: 650.00" min="0" step="10"/>
+            </div>
+            <button class="btn btn-lance" id="btnLance" onclick="fazerLance()" disabled>
+                Dar Lance
+            </button>
+            <div class="feedback" id="feedback"></div>
+
+            <button class="btn btn-reiniciar" onclick="reiniciarLeilao()">
+                🔄 Reiniciar Leilão
+            </button>
+        </div>
+
+        <div class="card" style="margin-top:22px; border-color:#001a14; border-color: rgba(0,212,170,0.3);">
+            <div style="font-size:0.8rem; color:var(--accent); font-weight:700; margin-bottom:10px;">
+                ⚡ Como funciona o WebSocket
+            </div>
+            <p style="font-size:0.82rem; color:var(--muted); line-height:1.7;">
+                Uma <strong style="color:var(--text);">única conexão TCP</strong> é estabelecida no
+                carregamento da página e mantida aberta.
+                <br/><br/>
+                O servidor <strong style="color:var(--accent);">empurra mensagens</strong> aos clientes
+                apenas quando há novidade (novo lance ou timer). Não há requisição periódica.
+                <br/><br/>
+                Abra o DevTools → Network → WS para ver o <em>único handshake</em> e o fluxo de
+                frames em tempo real.
+            </p>
+        </div>
+    </div>
+
+    <!-- LOG DE EVENTOS WEBSOCKET -->
+    <div class="ws-log">
+        <div class="ws-log-title">
+            <div class="conn-dot conectado"></div>
+            Log de Eventos WebSocket (últimas 20 mensagens)
+        </div>
+        <div class="ws-log-body" id="wsLog"></div>
+    </div>
+</main>
+
+<!-- MODAL DE ENCERRAMENTO -->
+<div class="overlay-encerrado" id="overlayEncerrado">
+    <div class="modal-encerrado">
+        <h2>⚡ Leilão Encerrado!</h2>
+        <div class="modal-vencedor">Vencedor: <strong id="modalVencedor"></strong></div>
+        <div class="modal-valor" id="modalValor"></div>
+        <div class="modal-stats">
+            Clientes receberam atualizações em tempo real: <strong id="modalClientes"></strong><br/>
+            Total de mensagens WebSocket: <strong id="modalMsgs"></strong><br/>
+            Lances reais: <strong id="modalLances"></strong><br/>
+            <span style="color:var(--accent);">
+                Sem polling — zero requisições desnecessárias ✅
+            </span>
+        </div>
+        <button class="btn btn-lance" style="margin-top:24px;" onclick="reiniciarLeilao()">
+            🔄 Novo Leilão
+        </button>
+    </div>
+</div>
+
+<script>
+    let stompClient = null;
+    let totalMsgsLocal = 0;
+    let encerrado = false;
+    let lanceAnteriorVal = 0;
+
+    function formatarMoeda(val) {
+        return val.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+    }
+
+    function formatarTempo(seg) {
+        const m = Math.floor(seg / 60).toString().padStart(2, '0');
+        const s = (seg % 60).toString().padStart(2, '0');
+        return `${m}:${s}`;
+    }
+
+    function adicionarLog(msg, tipo = '') {
+        const log = document.getElementById('wsLog');
+        const linha = document.createElement('div');
+        linha.className = tipo;
+        const agora = new Date().toLocaleTimeString('pt-BR');
+        linha.textContent = `[${agora}] ${msg}`;
+        log.insertBefore(linha, log.firstChild);
+        while (log.children.length > 20) log.removeChild(log.lastChild);
+    }
+
+    function conectar() {
+        // 1. Cria o socket SockJS (fallback automático se WS não disponível)
+        const socket = new SockJS('/ws-leilao');
+
+        // 2. Cria o cliente STOMP sobre o socket
+        stompClient = Stomp.over(socket);
+        stompClient.debug = null; // desativa logs verbose do STOMP no console
+
+        // 3. Handshake WebSocket — acontece UMA ÚNICA VEZ
+        stompClient.connect({}, function (frame) {
+            document.getElementById('connDot').className = 'conn-dot conectado';
+            document.getElementById('connLabel').textContent = 'Conectado via WS';
+            document.getElementById('btnLance').disabled = false;
+            adicionarLog('✅ Handshake WebSocket realizado. Conexão persistente estabelecida.', 'log-connect');
+
+            // 4. Inscreve-se no tópico /topic/leilao
+            //    A partir daqui, o servidor EMPURRA mensagens — sem requisição do cliente
+            stompClient.subscribe('/topic/leilao', function (message) {
+                const data = JSON.parse(message.body);
+                totalMsgsLocal++;
+
+                const houveNovoLance = data.lanceAtual > lanceAnteriorVal && data.totalLances > 0;
+
+                if (houveNovoLance) {
+                    lanceAnteriorVal = data.lanceAtual;
+                    adicionarLog(
+                        `📨 Msg WS #${totalMsgsLocal} recebida → NOVO LANCE: ${data.maiorLancador} → ${formatarMoeda(data.lanceAtual)}`,
+                        'log-lance'
+                    );
+                } else {
+                    adicionarLog(`📨 Msg WS #${totalMsgsLocal} → timer: ${formatarTempo(data.tempoRestante)}`, 'log-timer');
+                }
+
+                atualizarUI(data, houveNovoLance);
+            });
+
+        }, function (erro) {
+            document.getElementById('connDot').className = 'conn-dot erro';
+            document.getElementById('connLabel').textContent = 'Erro de conexão';
+            adicionarLog('❌ Erro WebSocket: ' + erro, 'log-erro');
+            // Tenta reconectar após 3 segundos
+            setTimeout(conectar, 3000);
+        });
+    }
+
+    function atualizarUI(data, houveNovoLance) {
+        // Métricas
+        document.getElementById('clientesConectados').textContent = data.clientesConectados;
+        document.getElementById('totalMsgs').textContent = totalMsgsLocal;
+        document.getElementById('totalLancesWs').textContent = data.totalLances;
+
+        // Item (primeira vez)
+        document.getElementById('imgItem').src = data.imagemUrl;
+        document.getElementById('nomeItem').textContent = data.item;
+        document.getElementById('descItem').textContent = data.descricao;
+
+        // Timer
+        const timerEl = document.getElementById('timer');
+        timerEl.textContent = formatarTempo(data.tempoRestante);
+        timerEl.className = 'timer-val' + (data.tempoRestante <= 30 ? ' urgente' : '');
+
+        // Lance atual (com animação no bump)
+        const lanceEl = document.getElementById('lanceAtual');
+        lanceEl.textContent = formatarMoeda(data.lanceAtual);
+        if (houveNovoLance) {
+            lanceEl.classList.add('bump');
+            setTimeout(() => lanceEl.classList.remove('bump'), 400);
+        }
+
+        document.getElementById('maiorLancador').textContent = '🏆 ' + data.maiorLancador;
+
+        // Histórico
+        const lista = document.getElementById('historicoLista');
+        if (data.historico && data.historico.length > 0) {
+            lista.innerHTML = data.historico.map((l, i) => `
+                <li class="historico-item">
+                    <div>
+                        <div class="hist-user">${i === 0 ? '🥇 ' : ''}${l.usuario}</div>
+                        <div class="hist-hora">${l.horario}</div>
+                    </div>
+                    <div class="hist-valor">${formatarMoeda(l.valor)}</div>
+                </li>
+            `).join('');
+        }
+
+        // Encerramento
+        if (!data.ativo && !encerrado) {
+            encerrado = true;
+            document.getElementById('modalVencedor').textContent = data.maiorLancador;
+            document.getElementById('modalValor').textContent = formatarMoeda(data.lanceAtual);
+            document.getElementById('modalClientes').textContent = data.clientesConectados;
+            document.getElementById('modalMsgs').textContent = totalMsgsLocal;
+            document.getElementById('modalLances').textContent = data.totalLances;
+            document.getElementById('overlayEncerrado').classList.add('show');
+        }
+
+        document.getElementById('btnLance').disabled = !data.ativo;
+
+        // Sugerir valor mínimo
+        const minimo = data.lanceAtual + 10;
+        document.getElementById('inputValor').min = minimo;
+        document.getElementById('inputValor').placeholder = `Mínimo: ${formatarMoeda(minimo)}`;
+    }
+
+    function fazerLance() {
+        const usuario = document.getElementById('inputUsuario').value.trim();
+        const valor = parseFloat(document.getElementById('inputValor').value);
+
+        if (!usuario) { mostrarFeedback('Informe seu nome.', false); return; }
+        if (!valor || valor <= 0) { mostrarFeedback('Informe um valor válido.', false); return; }
+
+        if (!stompClient || !stompClient.connected) {
+            mostrarFeedback('Sem conexão WebSocket. Aguarde...', false);
+            return;
+        }
+
+        // Envia o lance via STOMP para /app/lance
+        // O servidor valida e faz broadcast para /topic/leilao
+        stompClient.send('/app/lance', {}, JSON.stringify({ usuario, valor }));
+        adicionarLog(`📤 Lance enviado via WS: ${usuario} → ${formatarMoeda(valor)}`, 'log-lance');
+        mostrarFeedback('Lance enviado!', true);
+        document.getElementById('inputValor').value = '';
+    }
+
+    function mostrarFeedback(msg, ok) {
+        const fb = document.getElementById('feedback');
+        fb.textContent = msg;
+        fb.className = 'feedback ' + (ok ? 'ok' : 'erro');
+        setTimeout(() => { fb.className = 'feedback'; }, 3000);
+    }
+
+    async function reiniciarLeilao() {
+        await fetch('/api/reiniciar', { method: 'POST' });
+        totalMsgsLocal = 0;
+        lanceAnteriorVal = 0;
+        encerrado = false;
+        document.getElementById('overlayEncerrado').classList.remove('show');
+        document.getElementById('wsLog').innerHTML = '';
+        adicionarLog('Leilão reiniciado pelo professor.', 'log-connect');
+    }
+
+    // Inicia a conexão WebSocket ao carregar a página
+    adicionarLog('Iniciando conexão WebSocket com o servidor...', 'log-connect');
+    conectar();
+</script>
+</body>
+</html>

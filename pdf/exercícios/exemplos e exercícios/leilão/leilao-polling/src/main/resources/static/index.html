@@ -1,0 +1,582 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <title>Leilão ao Vivo — HTTP Polling</title>
+    <style>
+        :root {
+            --bg: #0f0f1a;
+            --card: #1a1a2e;
+            --card2: #16213e;
+            --accent: #e94560;
+            --warn: #f5a623;
+            --green: #27ae60;
+            --border: #2a2a4a;
+            --text: #e0e0f0;
+            --muted: #888aaa;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            background: var(--bg);
+            color: var(--text);
+            font-family: 'Segoe UI', system-ui, sans-serif;
+            min-height: 100vh;
+        }
+
+        /* ── BANNER DE AVISO ── */
+        .tech-banner {
+            background: var(--accent);
+            color: #fff;
+            text-align: center;
+            padding: 10px 20px;
+            font-weight: 700;
+            font-size: 0.95rem;
+            letter-spacing: 0.5px;
+        }
+        .tech-banner span { opacity: 0.85; font-weight: 400; }
+
+        header {
+            background: var(--card);
+            border-bottom: 2px solid var(--border);
+            padding: 18px 32px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 16px;
+        }
+        .logo { font-size: 1.4rem; font-weight: 800; color: var(--warn); }
+        .logo span { color: var(--text); font-weight: 300; }
+
+        /* ── STATS DE POLLING ── */
+        .polling-stats {
+            background: #1e0a0a;
+            border: 2px solid var(--accent);
+            border-radius: 10px;
+            padding: 12px 20px;
+            display: flex;
+            gap: 28px;
+            align-items: center;
+        }
+        .stat-item { text-align: center; }
+        .stat-value {
+            font-size: 1.8rem;
+            font-weight: 900;
+            color: var(--accent);
+            line-height: 1;
+        }
+        .stat-label { font-size: 0.68rem; color: var(--muted); text-transform: uppercase; letter-spacing: 1px; margin-top: 2px; }
+        .stat-item.green .stat-value { color: var(--green); }
+
+        /* ── PULSE INDICATOR ── */
+        .pulse-dot {
+            width: 12px; height: 12px;
+            border-radius: 50%;
+            background: var(--accent);
+            display: inline-block;
+            animation: pulse 2s infinite;
+        }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; transform: scale(1); }
+            50% { opacity: 0.4; transform: scale(0.7); }
+        }
+
+        main {
+            max-width: 1100px;
+            margin: 28px auto;
+            padding: 0 20px;
+            display: grid;
+            grid-template-columns: 1fr 340px;
+            gap: 22px;
+        }
+
+        .card {
+            background: var(--card);
+            border: 1px solid var(--border);
+            border-radius: 14px;
+            padding: 24px;
+        }
+
+        /* ── ITEM DO LEILÃO ── */
+        .item-img {
+            width: 100%;
+            height: 280px;
+            object-fit: cover;
+            border-radius: 10px;
+            border: 2px solid var(--border);
+        }
+        .item-title {
+            font-size: 1.35rem;
+            font-weight: 700;
+            margin: 16px 0 6px;
+            color: var(--warn);
+        }
+        .item-desc { color: var(--muted); font-size: 0.9rem; line-height: 1.6; }
+
+        /* ── TIMER ── */
+        .timer-block {
+            background: var(--card2);
+            border-radius: 10px;
+            padding: 14px 20px;
+            margin: 18px 0;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        .timer-val {
+            font-size: 2.2rem;
+            font-weight: 900;
+            color: var(--warn);
+            font-variant-numeric: tabular-nums;
+        }
+        .timer-val.urgente { color: var(--accent); animation: blink 1s step-end infinite; }
+        @keyframes blink { 50% { opacity: 0.4; } }
+        .timer-label { color: var(--muted); font-size: 0.8rem; }
+
+        /* ── LANCE ATUAL ── */
+        .lance-atual-block { text-align: center; margin: 18px 0; }
+        .lance-atual-val {
+            font-size: 3rem;
+            font-weight: 900;
+            color: var(--green);
+        }
+        .lance-atual-label { color: var(--muted); font-size: 0.85rem; margin-top: 4px; }
+        .lance-lider {
+            display: inline-block;
+            background: #0d2b1a;
+            border: 1px solid var(--green);
+            color: var(--green);
+            border-radius: 20px;
+            padding: 4px 14px;
+            font-size: 0.85rem;
+            margin-top: 8px;
+        }
+
+        /* ── FORMULÁRIO DE LANCE ── */
+        .form-group { margin-bottom: 14px; }
+        label { display: block; font-size: 0.82rem; color: var(--muted); margin-bottom: 6px; }
+        input[type="text"], input[type="number"] {
+            width: 100%;
+            background: var(--card2);
+            border: 1px solid var(--border);
+            color: var(--text);
+            padding: 10px 14px;
+            border-radius: 8px;
+            font-size: 1rem;
+        }
+        input:focus { outline: none; border-color: var(--warn); }
+
+        .btn {
+            width: 100%;
+            padding: 12px;
+            border: none;
+            border-radius: 8px;
+            font-size: 1rem;
+            font-weight: 700;
+            cursor: pointer;
+            transition: opacity 0.2s, transform 0.1s;
+        }
+        .btn:active { transform: scale(0.97); }
+        .btn-lance {
+            background: var(--warn);
+            color: #000;
+        }
+        .btn-lance:hover { opacity: 0.9; }
+        .btn-lance:disabled { background: #444; color: #888; cursor: not-allowed; }
+        .btn-reiniciar {
+            background: transparent;
+            border: 1px solid var(--border);
+            color: var(--muted);
+            margin-top: 10px;
+            font-size: 0.85rem;
+            padding: 8px;
+        }
+        .btn-reiniciar:hover { border-color: var(--accent); color: var(--accent); }
+
+        .feedback {
+            text-align: center;
+            padding: 10px;
+            border-radius: 8px;
+            font-size: 0.9rem;
+            font-weight: 600;
+            margin-top: 10px;
+            display: none;
+        }
+        .feedback.ok { background: #0d2b1a; color: var(--green); border: 1px solid var(--green); display: block; }
+        .feedback.erro { background: #2b0d0d; color: var(--accent); border: 1px solid var(--accent); display: block; }
+
+        /* ── HISTÓRICO ── */
+        .historico-title {
+            font-size: 0.8rem;
+            text-transform: uppercase;
+            letter-spacing: 1.5px;
+            color: var(--muted);
+            margin-bottom: 12px;
+        }
+        .historico-lista { list-style: none; display: flex; flex-direction: column; gap: 8px; }
+        .historico-item {
+            background: var(--card2);
+            border-radius: 8px;
+            padding: 10px 14px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-left: 3px solid var(--warn);
+            animation: slidein 0.4s ease;
+        }
+        @keyframes slidein { from { opacity: 0; transform: translateX(-12px); } to { opacity: 1; transform: none; } }
+        .historico-item:first-child { border-left-color: var(--green); }
+        .hist-user { font-weight: 700; font-size: 0.9rem; }
+        .hist-valor { font-size: 1rem; font-weight: 800; color: var(--warn); }
+        .hist-hora { font-size: 0.75rem; color: var(--muted); }
+        .sem-lances { color: var(--muted); font-size: 0.9rem; text-align: center; padding: 20px; }
+
+        /* ── LOG DE REQUISIÇÕES ── */
+        .req-log {
+            grid-column: 1 / -1;
+            background: #0d0d1a;
+            border: 1px solid var(--border);
+            border-radius: 14px;
+            padding: 16px 20px;
+        }
+        .req-log-title {
+            font-size: 0.8rem;
+            text-transform: uppercase;
+            letter-spacing: 1.5px;
+            color: var(--accent);
+            margin-bottom: 10px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .req-log-body {
+            font-family: 'Courier New', monospace;
+            font-size: 0.78rem;
+            color: #6bcc9a;
+            max-height: 120px;
+            overflow-y: auto;
+            line-height: 1.7;
+        }
+        .req-log-body .req-line { color: #5599ff; }
+        .req-log-body .req-line.novo-lance { color: #f5a623; font-weight: bold; }
+
+        /* ── STATUS ENCERRADO ── */
+        .overlay-encerrado {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,0.85);
+            z-index: 100;
+            align-items: center;
+            justify-content: center;
+        }
+        .overlay-encerrado.show { display: flex; }
+        .modal-encerrado {
+            background: var(--card);
+            border: 2px solid var(--warn);
+            border-radius: 18px;
+            padding: 40px;
+            text-align: center;
+            max-width: 420px;
+        }
+        .modal-encerrado h2 { font-size: 2rem; color: var(--warn); margin-bottom: 16px; }
+        .modal-vencedor { font-size: 1.1rem; color: var(--green); margin-bottom: 8px; }
+        .modal-valor { font-size: 2.5rem; font-weight: 900; color: var(--green); }
+        .modal-stats { color: var(--muted); font-size: 0.85rem; margin-top: 16px; }
+        .modal-stats strong { color: var(--accent); }
+
+        @media (max-width: 768px) {
+            main { grid-template-columns: 1fr; }
+        }
+    </style>
+</head>
+<body>
+
+<div class="tech-banner">
+    ⚠️ ABORDAGEM: HTTP POLLING — <span>o cliente consulta o servidor a cada 2 segundos, independente de haver novidades</span>
+</div>
+
+<header>
+    <div class="logo">🔨 Leilão<span> ao Vivo</span></div>
+    <div class="polling-stats">
+        <div class="stat-item">
+            <div class="stat-value" id="totalReqs">0</div>
+            <div class="stat-label">Requisições HTTP</div>
+        </div>
+        <div style="width:1px; height:40px; background:var(--border);"></div>
+        <div class="stat-item green">
+            <div class="stat-value" id="totalLances">0</div>
+            <div class="stat-label">Lances Reais</div>
+        </div>
+        <div style="width:1px; height:40px; background:var(--border);"></div>
+        <div class="stat-item">
+            <div class="stat-value" id="reqSemDados">0</div>
+            <div class="stat-label">Reqs. Inúteis</div>
+        </div>
+        <div style="align-self:center;">
+            <span class="pulse-dot"></span>
+            <span style="font-size:0.75rem; color:var(--muted); margin-left:6px;">polling ativo</span>
+        </div>
+    </div>
+</header>
+
+<main>
+    <!-- COLUNA ESQUERDA: item + histórico -->
+    <div>
+        <div class="card" style="margin-bottom:22px;">
+            <img id="imgItem" class="item-img" src="" alt="Item do leilão"/>
+            <div class="item-title" id="nomeItem">Carregando...</div>
+            <div class="item-desc" id="descItem"></div>
+
+            <div class="timer-block">
+                <div>
+                    <div class="timer-val" id="timer">--:--</div>
+                    <div class="timer-label">Tempo restante</div>
+                </div>
+            </div>
+
+            <div class="lance-atual-block">
+                <div class="lance-atual-label">Lance atual</div>
+                <div class="lance-atual-val" id="lanceAtual">R$ 0,00</div>
+                <div class="lance-lider" id="maiorLancador">Nenhum lance</div>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="historico-title">📋 Histórico de Lances</div>
+            <ul class="historico-lista" id="historicoLista">
+                <li class="sem-lances">Nenhum lance registrado ainda.</li>
+            </ul>
+        </div>
+    </div>
+
+    <!-- COLUNA DIREITA: formulário -->
+    <div>
+        <div class="card">
+            <div class="historico-title" style="margin-bottom:20px;">🏷️ Fazer Lance</div>
+
+            <div class="form-group">
+                <label>Seu nome / apelido</label>
+                <input type="text" id="inputUsuario" placeholder="Ex: João Silva" maxlength="30"/>
+            </div>
+            <div class="form-group">
+                <label>Valor do lance (R$)</label>
+                <input type="number" id="inputValor" placeholder="Ex: 650.00" min="0" step="10"/>
+            </div>
+            <button class="btn btn-lance" id="btnLance" onclick="fazerLance()">
+                Dar Lance
+            </button>
+            <div class="feedback" id="feedback"></div>
+
+            <button class="btn btn-reiniciar" onclick="reiniciarLeilao()">
+                🔄 Reiniciar Leilão
+            </button>
+        </div>
+
+        <div class="card" style="margin-top:22px; border-color:#2b1a00;">
+            <div style="font-size:0.8rem; color:var(--warn); font-weight:700; margin-bottom:10px;">
+                ℹ️ Como funciona o Polling
+            </div>
+            <p style="font-size:0.82rem; color:var(--muted); line-height:1.7;">
+                A cada <strong style="color:var(--text);">2 segundos</strong>, o navegador envia uma
+                requisição HTTP <code style="color:#6bcc9a;">GET /api/leilao</code> ao servidor — mesmo
+                que <em>nada tenha mudado</em>.
+                <br/><br/>
+                Observe o contador <strong style="color:var(--accent);">"Reqs. Inúteis"</strong> crescer
+                enquanto nenhum lance é feito. Esse é o custo do polling.
+                <br/><br/>
+                Abra o DevTools → Network para visualizar as requisições repetidas.
+            </p>
+        </div>
+    </div>
+
+    <!-- LOG DE REQUISIÇÕES -->
+    <div class="req-log">
+        <div class="req-log-title">
+            <span class="pulse-dot" style="background:var(--accent);"></span>
+            Log de Requisições HTTP (últimas 20)
+        </div>
+        <div class="req-log-body" id="reqLog"></div>
+    </div>
+</main>
+
+<!-- MODAL DE ENCERRAMENTO -->
+<div class="overlay-encerrado" id="overlayEncerrado">
+    <div class="modal-encerrado">
+        <h2>🔨 Leilão Encerrado!</h2>
+        <div class="modal-vencedor">Vencedor: <strong id="modalVencedor"></strong></div>
+        <div class="modal-valor" id="modalValor"></div>
+        <div class="modal-stats">
+            Total de requisições HTTP (polling): <strong id="modalReqs"></strong><br/>
+            Lances reais recebidos: <strong id="modalLances"></strong><br/>
+            <span style="color:var(--accent);">Requisições desnecessárias: <strong id="modalInutil"></strong></span>
+        </div>
+        <button class="btn btn-lance" style="margin-top:24px;" onclick="reiniciarLeilao()">
+            🔄 Novo Leilão
+        </button>
+    </div>
+</div>
+
+<script>
+    const INTERVALO_POLLING = 2000; // ms — altere aqui para demonstrar o impacto
+
+    let totalReqsLocal = 0;
+    let totalLancesLocal = 0;
+    let lanceAnterior = 0;
+    let encerrado = false;
+
+    function formatarMoeda(val) {
+        return val.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+    }
+
+    function formatarTempo(seg) {
+        const m = Math.floor(seg / 60).toString().padStart(2, '0');
+        const s = (seg % 60).toString().padStart(2, '0');
+        return `${m}:${s}`;
+    }
+
+    function adicionarLog(msg, tipo = '') {
+        const log = document.getElementById('reqLog');
+        const linha = document.createElement('div');
+        linha.className = 'req-line ' + tipo;
+        const agora = new Date().toLocaleTimeString('pt-BR');
+        linha.textContent = `[${agora}] ${msg}`;
+        log.insertBefore(linha, log.firstChild);
+        // mantém só 20 linhas
+        while (log.children.length > 20) log.removeChild(log.lastChild);
+    }
+
+    async function pollEstado() {
+        try {
+            const inicio = performance.now();
+            const resp = await fetch('/api/leilao');
+            const data = await resp.json();
+            const ms = Math.round(performance.now() - inicio);
+
+            totalReqsLocal++;
+            const houveNovoLance = data.lanceAtual > lanceAnterior;
+
+            if (houveNovoLance) {
+                totalLancesLocal++;
+                lanceAnterior = data.lanceAtual;
+                adicionarLog(
+                    `GET /api/leilao → 200 OK (${ms}ms) ✦ NOVO LANCE: ${formatarMoeda(data.lanceAtual)}`,
+                    'novo-lance'
+                );
+            } else {
+                const reqsInuteis = totalReqsLocal - totalLancesLocal;
+                adicionarLog(`GET /api/leilao → 200 OK (${ms}ms) — sem mudança (req. inútil #${reqsInuteis})`);
+            }
+
+            atualizarUI(data, houveNovoLance);
+        } catch (e) {
+            adicionarLog('ERRO: falha na requisição — ' + e.message);
+        }
+    }
+
+    function atualizarUI(data, houveNovoLance) {
+        // Contadores
+        document.getElementById('totalReqs').textContent = totalReqsLocal;
+        document.getElementById('totalLances').textContent = totalLancesLocal;
+        document.getElementById('reqSemDados').textContent = totalReqsLocal - totalLancesLocal;
+
+        // Item
+        if (document.getElementById('nomeItem').textContent === 'Carregando...') {
+            document.getElementById('imgItem').src = data.imagemUrl;
+            document.getElementById('nomeItem').textContent = data.item;
+            document.getElementById('descItem').textContent = data.descricao;
+            lanceAnterior = data.lanceAtual;
+        }
+
+        // Timer
+        const timerEl = document.getElementById('timer');
+        timerEl.textContent = formatarTempo(data.tempoRestante);
+        timerEl.className = 'timer-val' + (data.tempoRestante <= 30 ? ' urgente' : '');
+
+        // Lance atual
+        document.getElementById('lanceAtual').textContent = formatarMoeda(data.lanceAtual);
+        document.getElementById('maiorLancador').textContent = '🏆 ' + data.maiorLancador;
+
+        // Histórico
+        const lista = document.getElementById('historicoLista');
+        if (data.historico && data.historico.length > 0) {
+            lista.innerHTML = data.historico.map((l, i) => `
+                <li class="historico-item">
+                    <div>
+                        <div class="hist-user">${i === 0 ? '🥇 ' : ''}${l.usuario}</div>
+                        <div class="hist-hora">${l.horario}</div>
+                    </div>
+                    <div class="hist-valor">${formatarMoeda(l.valor)}</div>
+                </li>
+            `).join('');
+        }
+
+        // Encerramento
+        if (!data.ativo && !encerrado) {
+            encerrado = true;
+            const reqsInuteis = totalReqsLocal - totalLancesLocal;
+            document.getElementById('modalVencedor').textContent = data.maiorLancador;
+            document.getElementById('modalValor').textContent = formatarMoeda(data.lanceAtual);
+            document.getElementById('modalReqs').textContent = totalReqsLocal;
+            document.getElementById('modalLances').textContent = totalLancesLocal;
+            document.getElementById('modalInutil').textContent = reqsInuteis;
+            document.getElementById('overlayEncerrado').classList.add('show');
+        }
+
+        // Botão de lance
+        document.getElementById('btnLance').disabled = !data.ativo;
+
+        // Sugerir valor mínimo
+        const minimo = data.lanceAtual + 10;
+        document.getElementById('inputValor').min = minimo;
+        document.getElementById('inputValor').placeholder = `Mínimo: ${formatarMoeda(minimo)}`;
+    }
+
+    async function fazerLance() {
+        const usuario = document.getElementById('inputUsuario').value.trim();
+        const valor = parseFloat(document.getElementById('inputValor').value);
+        const fb = document.getElementById('feedback');
+
+        if (!usuario) { mostrarFeedback('Informe seu nome.', false); return; }
+        if (!valor || valor <= 0) { mostrarFeedback('Informe um valor válido.', false); return; }
+
+        try {
+            const resp = await fetch('/api/leilao/lance', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ usuario, valor })
+            });
+            const data = await resp.json();
+            mostrarFeedback(data.mensagem, data.sucesso);
+            if (data.sucesso) document.getElementById('inputValor').value = '';
+        } catch (e) {
+            mostrarFeedback('Erro de conexão.', false);
+        }
+    }
+
+    function mostrarFeedback(msg, ok) {
+        const fb = document.getElementById('feedback');
+        fb.textContent = msg;
+        fb.className = 'feedback ' + (ok ? 'ok' : 'erro');
+        setTimeout(() => { fb.className = 'feedback'; }, 3500);
+    }
+
+    async function reiniciarLeilao() {
+        await fetch('/api/leilao/reiniciar', { method: 'POST' });
+        totalReqsLocal = 0;
+        totalLancesLocal = 0;
+        lanceAnterior = 0;
+        encerrado = false;
+        document.getElementById('overlayEncerrado').classList.remove('show');
+        document.getElementById('reqLog').innerHTML = '';
+        document.getElementById('nomeItem').textContent = 'Carregando...';
+        adicionarLog('Leilão reiniciado pelo professor.');
+    }
+
+    // Inicia o polling
+    adicionarLog('Polling iniciado — requisição a cada ' + (INTERVALO_POLLING / 1000) + 's');
+    pollEstado();
+    setInterval(pollEstado, INTERVALO_POLLING);
+</script>
+</body>
+</html>
